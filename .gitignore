@@ -1,0 +1,10 @@
+.env
+
+ingest.log
+
+PRESENTATION.md
+
+/data
+/data/*
+/data/**
+data/airport.csv
