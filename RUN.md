@@ -2,7 +2,11 @@
 
 This document provides step-by-step instructions to initialize the database architecture, load the BTS flight data, and optimize the system for performance. Follow these steps in exact order to deploy the environment successfully.
 
-> **Prerequisites:** Please ensure you have `PostgreSQL 16+`, the `PostGIS` extension, and `Python 3` installed locally. The commands below default to the `postgres` user connecting via `localhost`.
+> **Prerequisites:** Please ensure you have `PostgreSQL 16+`, the `PostGIS` extension, and `Python 3` installed locally.
+>
+> **Connection modes (choose one):**
+> - **Mode A - Explicit connection**: `-h localhost -U postgres` (works when pg_hba uses password/md5/scram).
+> - **Mode B - Peer auth local**: `psql -d skylens ...` (works when your OS user is mapped by peer auth).
 
 ---
 
@@ -10,36 +14,29 @@ This document provides step-by-step instructions to initialize the database arch
 Drop the old database (if it exists) and recreate a fresh, clean environment.
 
 ```bash
+# Mode A (explicit host/user)
 dropdb -U postgres -h localhost --if-exists skylens
 createdb -U postgres -h localhost skylens
+
+# Mode B (peer auth local)
+dropdb --if-exists skylens
+createdb skylens
 ```
 
-## Step 1: Core Schema & Partitions
-Define the foundational tables, relationships, and the automated monthly partitioning structure.
+## Step 1: One-shot SQL Deployment (without indexing)
+Deploy toàn bộ schema, partitioning, triggers, functions/procedures và views bằng 1 lệnh.
 
 ```bash
-# 1. Create Core Tables, Data Types, and PostGIS Extension
-psql -h localhost -U postgres -d skylens -f sql/schema/001_init.sql
+# Mode A
+psql -h localhost -U postgres -d skylens -f sql/deploy.sql
 
-# 2. Allocate Monthly Partitions for the Flights Table
-psql -h localhost -U postgres -d skylens -f sql/schema/002_partitions.sql
+# Mode B
+psql -d skylens -f sql/deploy.sql
 ```
 
-## Step 2: Event-Driven Logic (Triggers & Functions)
-Activate database triggers to handle full-text search syncing and flight delay categorizations automatically on insert.
+> Canonical module map: `sql/INDEX.md`
 
-```bash
-# 1. Start Triggers (Data Integrity & Auto-Categorization)
-psql -h localhost -U postgres -d skylens -f sql/triggers/trg_airports.sql
-psql -h localhost -U postgres -d skylens -f sql/triggers/trg_airlines.sql
-psql -h localhost -U postgres -d skylens -f sql/triggers/trg_flights.sql
-
-# 2. Deploy PL/pgSQL Business Logic & Benchmarking Procedures
-psql -h localhost -U postgres -d skylens -f sql/functions/analytics.sql
-psql -h localhost -U postgres -d skylens -f sql/functions/benchmarks.sql
-```
-
-## Step 3: Data Ingestion (ETL)
+## Step 2: Data Ingestion (ETL)
 Execute the Python script to extract messy CSV data from the Bureau of Transportation Statistics, transform it, and load it into PostgreSQL.
 
 ```bash
@@ -50,12 +47,27 @@ pip install -r scripts/requirements.txt
 python scripts/ingest.py --year 2023
 ```
 
-## Step 4: Performance Indexing
-**CRITICAL:** Only run this step **AFTER** the data has been fully ingested in Step 3. Building indexes on pre-loaded data is significantly faster and prevents severe index fragmentation.
+## Step 3: Performance Indexing
+**CRITICAL:** Only run this step **AFTER** the data has been fully ingested in Step 2. Building indexes on pre-loaded data is significantly faster and prevents severe index fragmentation.
 
 ```bash
-psql -h localhost -U postgres -d skylens -f sql/schema/003_indexes.sql
+# Mode A
+psql -h localhost -U postgres -d skylens -f sql/schema/003_indexing.sql
+# Mode B
+psql -d skylens -f sql/schema/003_indexing.sql
 ```
 
 ---
 *Deployment Complete! The SkyLens database is now fully populated, highly optimized, and ready to execute complex analytical queries.*
+
+## Step 4: Final-Term SQL Showcase (Optional)
+Run end-to-end quality checks, analytics, and benchmark capture for presentation/demo.
+
+```bash
+# Mode A
+psql -h localhost -U postgres -d skylens -f sql/queries/quality_checks.sql
+psql -h localhost -U postgres -d skylens -f sql/queries/final_showcase.sql
+# Mode B
+psql -d skylens -f sql/queries/quality_checks.sql
+psql -d skylens -f sql/queries/final_showcase.sql
+```

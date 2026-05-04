@@ -143,6 +143,19 @@ WITH monthly_route_delay AS (
     WHERE flight_date BETWEEN '2023-01-01' AND '2023-12-31'
     GROUP BY DATE_TRUNC('month', flight_date), origin, destination
     HAVING COUNT(*) >= 50  -- Chỉ xét route có đủ lượng chuyến
+),
+delta AS (
+    SELECT
+        month,
+        origin,
+        destination,
+        flight_count,
+        avg_delay,
+        LAG(avg_delay, 1) OVER (
+            PARTITION BY origin, destination
+            ORDER BY month
+        ) AS prev_month_avg_delay
+    FROM monthly_route_delay
 )
 SELECT
     month,
@@ -150,43 +163,26 @@ SELECT
     destination,
     flight_count,
     avg_delay                                   AS current_avg_delay,
-
-    -- LAG: delay trung bình của tháng trước cùng route này
-    LAG(avg_delay, 1) OVER (
-        PARTITION BY origin, destination
-        ORDER BY month
-    )                                           AS prev_month_avg_delay,
+    prev_month_avg_delay,
 
     -- % thay đổi so với tháng trước
     ROUND(
         100.0 * (
-            avg_delay - LAG(avg_delay, 1) OVER (
-                PARTITION BY origin, destination ORDER BY month
-            )
-        ) / NULLIF(LAG(avg_delay, 1) OVER (
-            PARTITION BY origin, destination ORDER BY month
-        ), 0),
+            avg_delay - prev_month_avg_delay
+        ) / NULLIF(prev_month_avg_delay, 0),
         2
     )                                           AS pct_change,
 
     -- Phân loại mức thay đổi
     CASE
-        WHEN avg_delay - LAG(avg_delay, 1) OVER (
-                PARTITION BY origin, destination ORDER BY month
-             ) > 30 THEN '🔴 Tăng mạnh'
-        WHEN avg_delay - LAG(avg_delay, 1) OVER (
-                PARTITION BY origin, destination ORDER BY month
-             ) > 10 THEN '🟡 Tăng nhẹ'
-        WHEN avg_delay - LAG(avg_delay, 1) OVER (
-                PARTITION BY origin, destination ORDER BY month
-             ) < -10 THEN '🟢 Cải thiện'
-        ELSE '⚪ Ổn định'
+        WHEN avg_delay - prev_month_avg_delay > 30 THEN 'surge'
+        WHEN avg_delay - prev_month_avg_delay > 10 THEN 'up'
+        WHEN avg_delay - prev_month_avg_delay < -10 THEN 'improved'
+        ELSE 'stable'
     END                                         AS trend
-FROM monthly_route_delay
+FROM delta
 ORDER BY ABS(
-    avg_delay - LAG(avg_delay, 1) OVER (
-        PARTITION BY origin, destination ORDER BY month
-    )
+    avg_delay - prev_month_avg_delay
 ) DESC NULLS LAST
 LIMIT 50;
 

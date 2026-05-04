@@ -140,6 +140,7 @@ WITH airport_clusters AS (
         a.name,
         a.city,
         a.country,
+        a.location,
         -- Gom thành 6 cụm (6 vùng địa lý của Mỹ: NE, SE, MW, SW, W, NW)
         ST_ClusterKMeans(a.location::GEOMETRY, 6) OVER () AS cluster_id
     FROM airports a
@@ -158,9 +159,8 @@ cluster_stats AS (
         ST_AsText(ST_Centroid(
             ST_Collect(ac.location::GEOMETRY)
         ))                                          AS cluster_centroid,
-        STRING_AGG(DISTINCT ac.city, ', '
-                   ORDER BY ac.city
-                   LIMIT 5)                         AS sample_cities
+        array_to_string((array_agg(DISTINCT ac.city ORDER BY ac.city))[1:5], ', ')
+                                                    AS sample_cities
     FROM airport_clusters ac
     LEFT JOIN flights f ON f.origin = ac.iata_code
       AND f.flight_date BETWEEN '2023-01-01' AND '2023-12-31'

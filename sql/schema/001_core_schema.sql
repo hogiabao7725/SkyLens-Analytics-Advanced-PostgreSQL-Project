@@ -1,3 +1,13 @@
+-- =============================================================================
+-- 001_core_schema.sql
+-- Mục tiêu:
+--   - Khởi tạo toàn bộ bảng lõi cho hệ thống phân tích chuyến bay.
+--   - Thiết lập ràng buộc dữ liệu để giảm lỗi ngay tại tầng database.
+-- Ghi chú:
+--   - Bảng flights là bảng partitioned theo flight_date.
+--   - Chạy file này trước tất cả các file khác trong schema.
+-- =============================================================================
+
 -- CREATE DATABASE skylens;
 
 CREATE EXTENSION IF NOT EXISTS postgis;
@@ -43,8 +53,23 @@ CREATE TABLE flights (
     nas_delay       INT,
     security_delay  INT,
     late_aircraft_delay INT,
-    created_at      TIMESTAMPTZ DEFAULT NOW()
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT pk_flights PRIMARY KEY (id, flight_date),
+    CONSTRAINT chk_flights_origin_dest_diff CHECK (origin <> destination),
+    CONSTRAINT chk_flights_distance_positive CHECK (distance_miles IS NULL OR distance_miles > 0),
+    CONSTRAINT chk_flights_dep_delay_reasonable CHECK (dep_delay_min IS NULL OR dep_delay_min >= -120),
+    CONSTRAINT chk_flights_arr_delay_reasonable CHECK (arr_delay_min IS NULL OR arr_delay_min >= -120),
+    CONSTRAINT chk_flights_delay_breakdown_nonnegative CHECK (
+        (carrier_delay IS NULL OR carrier_delay >= 0) AND
+        (weather_delay IS NULL OR weather_delay >= 0) AND
+        (nas_delay IS NULL OR nas_delay >= 0) AND
+        (security_delay IS NULL OR security_delay >= 0) AND
+        (late_aircraft_delay IS NULL OR late_aircraft_delay >= 0)
+    )
 ) PARTITION BY RANGE (flight_date);  -- PARTITION key
+
+CREATE UNIQUE INDEX uq_flights_business_key
+    ON flights (flight_date, airline_code, flight_number, origin, destination, dep_time);
 
 -- delay_audit_log: trigger sẽ insert vào đây
 CREATE TABLE delay_audit_log (
