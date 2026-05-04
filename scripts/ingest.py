@@ -105,8 +105,7 @@ BTS_COLUMN_MAP = {
     "LATE_AIRCRAFT_DELAY":                 "late_aircraft_delay",
 }
 
-# Các hãng bay US thông dụng (dùng khi BTS file không có tên đầy đủ)
-# IATA code → (tên đầy đủ, quốc gia)
+# IATA code
 KNOWN_AIRLINES = {
     "AA": ("American Airlines",         "US"),
     "AS": ("Alaska Airlines",           "US"),
@@ -217,13 +216,13 @@ def parse_date(val) -> Optional[date]:
     if pd.isna(val) or not val:
         return None
     val_str = str(val).strip()
-    
+
     # TH1: Thử parse dạng YYYY-MM-DD
     try:
         return datetime.strptime(val_str, "%Y-%m-%d").date()
     except ValueError:
         pass
-        
+
     # TH2: M/D/YYYY hoặc M/D/YYYY HH:MM:SS AM
     try:
         date_part = val_str.split(" ")[0]
@@ -233,7 +232,7 @@ def parse_date(val) -> Optional[date]:
             return date(int(y), int(m), int(d))
     except (ValueError, TypeError):
         pass
-        
+
     return None
 
 
@@ -335,7 +334,7 @@ def import_airports(conn: psycopg2.extensions.connection, dry_run: bool = False)
             skipped += 1
             continue
 
-        records.append((iata, name, city, country, lat, lon, elev, tz))
+        records.append((iata, name, city, country, lon, lat, elev, tz))
 
     log.info(f"Records hợp lệ: {len(records):,} | Bỏ qua: {skipped:,}")
 
