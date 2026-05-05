@@ -2,7 +2,7 @@
 
 This document provides step-by-step instructions to initialize the database architecture, load the BTS flight data, and optimize the system for performance. Follow these steps in exact order to deploy the environment successfully.
 
-> **Prerequisites:** Please ensure you have `PostgreSQL 16+`, the `PostGIS` extension, and `Python 3` installed locally.
+> **Prerequisites:** `PostgreSQL 16+`, the `PostGIS` extension, and `Python 3` with the standard library **`venv`** module (typically bundled with Python 3.3+).
 >
 > **Connection modes (choose one):**
 > - **Mode A - Explicit connection**: `-h localhost -U postgres` (works when pg_hba uses password/md5/scram).
@@ -39,13 +39,45 @@ psql -d skylens -f sql/deploy.sql
 ## Step 2: Data Ingestion (ETL)
 Execute the Python script to extract messy CSV data from the Bureau of Transportation Statistics, transform it, and load it into PostgreSQL.
 
-```bash
-# 1. Install required Python packages
-pip install -r scripts/requirements.txt
+Use a **project virtual environment** (`.venv` in the repo root) so ingest dependencies (`pandas`, `psycopg2`, …) do not collide with system Python (*môi trường ảo — làm một lần cho mỗi máy/cloned repo*).
 
-# 2. Import 2023 flight data (This process may take several minutes)
+### 2a — Create venv (chỉ cần chạy một lần)
+
+```bash
+# at repository root (directory containing README.md / sql/)
+python3 -m venv .venv
+```
+
+### 2b — Activate venv và cài dependencies (mỗi lần mở terminal mới làm ingest)
+
+Linux / macOS:
+
+```bash
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r scripts/requirements.txt
+```
+
+Windows (PowerShell):
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+pip install --upgrade pip
+pip install -r scripts/requirements.txt
+```
+
+(Bash trên Git for Windows): `source .venv/Scripts/activate`
+
+### 2c — Chạy ingest
+
+```bash
+# Trong terminal đã activate .venv — có thể mất vài phút
 python scripts/ingest.py --year 2023
 ```
+
+Khi không cần nữa: `deactivate` để thoát venv.
+
+> **Lưu ý:** `.env` ở thư mục gốc repo (PostgreSQL URI, …) vẫn được `ingest.py` đọc như trước; venv chỉ bọc các gói Python.
 
 ## Step 3: Performance Indexing
 **CRITICAL:** Only run this step **AFTER** the data has been fully ingested in Step 2. Building indexes on pre-loaded data is significantly faster and prevents severe index fragmentation.

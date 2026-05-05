@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -118,7 +119,7 @@ func (a *App) handleAirlineScore(w http.ResponseWriter, r *http.Request) {
 		SELECT airline_code, total_flights, completed_flights, on_time_flights,
 		       on_time_pct, avg_arr_delay_min, avg_dep_delay_min, cancellation_rate,
 		       severe_delay_pct, performance_score
-		FROM fn_airline_score($1, $2, $3)
+		FROM fn_airline_score($1::char(2), $2::date, $3::date)
 	`, airline, startDate, endDate)
 
 	type item struct {
@@ -162,8 +163,37 @@ func (a *App) handleTopRoutes(w http.ResponseWriter, r *http.Request) {
 		LIMIT $1
 	`, limit)
 	if err != nil {
-		writeErr(w, err)
-		return
+		if !isUndefinedRelation(err) {
+			writeErr(w, err)
+			return
+		}
+		// fallback khi chưa tạo materialized view
+		rows, err = a.db.Query(r.Context(), `
+			SELECT
+			    f.origin,
+			    f.destination,
+			    COALESCE(o.city, o.name) AS origin_city,
+			    COALESCE(d.city, d.name) AS dest_city,
+			    ST_Y(o.location::geometry) AS origin_lat,
+			    ST_X(o.location::geometry) AS origin_lon,
+			    ST_Y(d.location::geometry) AS dest_lat,
+			    ST_X(d.location::geometry) AS dest_lon,
+			    COUNT(*)::bigint AS total_flights,
+			    ROUND(AVG(f.arr_delay_min) FILTER (WHERE NOT f.cancelled)::numeric, 2) AS avg_arr_delay
+			FROM flights f
+			JOIN airports o ON o.iata_code = f.origin
+			JOIN airports d ON d.iata_code = f.destination
+			WHERE o.location IS NOT NULL
+			  AND d.location IS NOT NULL
+			GROUP BY f.origin, f.destination, o.city, o.name, d.city, d.name, o.location, d.location
+			HAVING COUNT(*) >= 20
+			ORDER BY total_flights DESC
+			LIMIT $1
+		`, limit)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
 	}
 	defer rows.Close()
 
@@ -204,7 +234,7 @@ func (a *App) handleRouteKPI(w http.ResponseWriter, r *http.Request) {
 	row := a.db.QueryRow(r.Context(), `
 		SELECT total_flights, completed_flights, cancelled_flights, cancellation_rate,
 		       on_time_pct, avg_arr_delay_min
-		FROM fn_route_kpi($1, $2, $3, $4)
+		FROM fn_route_kpi($1::char(3), $2::char(3), $3::date, $4::date)
 	`, origin, destination, startDate, endDate)
 
 	type item struct {
@@ -224,8 +254,35 @@ func (a *App) handleRouteKPI(w http.ResponseWriter, r *http.Request) {
 		&out.TotalFlights, &out.CompletedFlights, &out.CancelledFlights,
 		&out.CancellationRate, &out.OnTimePct, &out.AvgArrDelayMin,
 	); err != nil {
-		writeErr(w, err)
-		return
+		if !isUndefinedFunction(err) {
+			writeErr(w, err)
+			return
+		}
+		// fallback khi function chưa deploy
+		row2 := a.db.QueryRow(r.Context(), `
+			SELECT
+				COUNT(*)::bigint AS total_flights,
+				COUNT(*) FILTER (WHERE NOT cancelled)::bigint AS completed_flights,
+				COUNT(*) FILTER (WHERE cancelled)::bigint AS cancelled_flights,
+				ROUND(100.0 * COUNT(*) FILTER (WHERE cancelled) / NULLIF(COUNT(*), 0), 2) AS cancellation_rate,
+				ROUND(
+					100.0 * COUNT(*) FILTER (WHERE NOT cancelled AND arr_delay_min <= 15)
+					/ NULLIF(COUNT(*) FILTER (WHERE NOT cancelled), 0),
+					2
+				) AS on_time_pct,
+				ROUND(AVG(arr_delay_min) FILTER (WHERE NOT cancelled)::numeric, 2) AS avg_arr_delay_min
+			FROM flights
+			WHERE origin = $1::char(3)
+			  AND destination = $2::char(3)
+			  AND flight_date BETWEEN $3::date AND $4::date
+		`, origin, destination, startDate, endDate)
+		if err := row2.Scan(
+			&out.TotalFlights, &out.CompletedFlights, &out.CancelledFlights,
+			&out.CancellationRate, &out.OnTimePct, &out.AvgArrDelayMin,
+		); err != nil {
+			writeErr(w, err)
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -235,12 +292,46 @@ func (a *App) handleMonthlyTrend(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(), `
 		SELECT month, airline_code, on_time_pct, avg_arr_delay, mom_change_pct
 		FROM v_airline_monthly_trend
-		WHERE airline_code = $1
+		WHERE airline_code = $1::char(2)
 		ORDER BY month
 	`, airline)
 	if err != nil {
-		writeErr(w, err)
-		return
+		if !isUndefinedRelation(err) {
+			writeErr(w, err)
+			return
+		}
+		// fallback khi view chưa deploy
+		rows, err = a.db.Query(r.Context(), `
+			WITH monthly AS (
+				SELECT
+					date_trunc('month', flight_date)::date AS month,
+					airline_code,
+					ROUND(
+						100.0 * COUNT(*) FILTER (WHERE NOT cancelled AND arr_delay_min <= 15)
+						/ NULLIF(COUNT(*) FILTER (WHERE NOT cancelled), 0),
+						2
+					) AS on_time_pct,
+					ROUND(AVG(arr_delay_min) FILTER (WHERE NOT cancelled)::numeric, 2) AS avg_arr_delay
+				FROM flights
+				WHERE airline_code = $1::char(2)
+				GROUP BY 1, 2
+			)
+			SELECT
+				month,
+				airline_code,
+				on_time_pct,
+				avg_arr_delay,
+				ROUND(
+					on_time_pct - LAG(on_time_pct) OVER (PARTITION BY airline_code ORDER BY month),
+					2
+				) AS mom_change_pct
+			FROM monthly
+			ORDER BY month
+		`, airline)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
 	}
 	defer rows.Close()
 
@@ -271,11 +362,41 @@ func (a *App) handleQualitySummary(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := a.db.Query(r.Context(), `
 		SELECT metric_name, metric_value, metric_percent
-		FROM fn_data_quality_summary($1, $2)
+		FROM fn_data_quality_summary($1::date, $2::date)
 	`, startDate, endDate)
 	if err != nil {
-		writeErr(w, err)
-		return
+		if !isUndefinedFunction(err) {
+			writeErr(w, err)
+			return
+		}
+		// fallback khi function chưa deploy
+		rows, err = a.db.Query(r.Context(), `
+			WITH base AS (
+				SELECT * FROM flights
+				WHERE flight_date BETWEEN $1::date AND $2::date
+			),
+			total AS (
+				SELECT COUNT(*)::bigint AS total_rows FROM base
+			),
+			metrics AS (
+				SELECT 'total_rows'::text AS metric_name, COUNT(*)::bigint AS metric_value FROM base
+				UNION ALL SELECT 'null_dep_time', COUNT(*)::bigint FROM base WHERE dep_time IS NULL
+				UNION ALL SELECT 'null_arr_time', COUNT(*)::bigint FROM base WHERE arr_time IS NULL
+				UNION ALL SELECT 'cancelled_rows', COUNT(*)::bigint FROM base WHERE cancelled = TRUE
+				UNION ALL SELECT 'negative_distance', COUNT(*)::bigint FROM base WHERE distance_miles IS NOT NULL AND distance_miles <= 0
+			)
+			SELECT
+				m.metric_name,
+				m.metric_value,
+				ROUND(100.0 * m.metric_value / NULLIF(t.total_rows, 0), 3) AS metric_percent
+			FROM metrics m
+			CROSS JOIN total t
+			ORDER BY CASE WHEN m.metric_name = 'total_rows' THEN 0 ELSE 1 END, m.metric_value DESC
+		`, startDate, endDate)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
 	}
 	defer rows.Close()
 
@@ -312,6 +433,7 @@ func withCORS(next http.Handler) http.Handler {
 func writeErr(w http.ResponseWriter, err error) {
 	writeJSON(w, http.StatusInternalServerError, map[string]any{
 		"error": err.Error(),
+		"hint":  "Hãy chạy: psql -d skylens -f sql/deploy.sql && sau ingest chạy psql -d skylens -f sql/schema/003_indexing.sql",
 	})
 }
 
@@ -333,4 +455,20 @@ func queryOrDefault(r *http.Request, key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func isUndefinedFunction(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "SQLSTATE 42883")
+}
+
+func isUndefinedRelation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "SQLSTATE 42P01")
 }

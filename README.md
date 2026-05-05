@@ -84,3 +84,5 @@ Please refer to the **`RUN.md`** file located in the root directory.
 It contains the exact sequential terminal commands required to initialize the database, ingest the Python data, and run the advanced PostgreSQL feature demonstrations for grading purposes.
 
 For fast navigation and edit workflow, use **`sql/INDEX.md`** (numbered module map and execution order).
+
+For full-stack demo app setup (Go backend + React frontend), see **`APP_DEMO.md`**.

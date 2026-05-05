@@ -1,5 +1,7 @@
 .env
 
+.venv/
+
 ingest.log
 
 PRESENTATION.md
@@ -10,3 +12,8 @@ PRESENTATION.md
 data/airport.csv
 
 about.md
+
+# Go / Frontend local artifacts
+backend/bin/
+frontend/node_modules/
+frontend/dist/
