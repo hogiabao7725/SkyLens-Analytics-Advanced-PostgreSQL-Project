@@ -42,21 +42,29 @@ Every file in the `/sql` directory serves a specific, isolated purpose—adherin
 │   └── requirements.txt      # Python dependencies (pandas, psycopg2)
 ├── sql/
 │   ├── schema/               # Step 1: Core Definitions (MUST be run in order)
-│   │   ├── 001_init.sql      # Database tables, data types, and PostGIS extension
-│   │   ├── 002_partitions.sql# Automatic monthly table partition allocations
-│   │   └── 003_indexes.sql   # Performance optimizations (B-Tree, GIN, BRIN)
+│   │   ├── 001_core_schema.sql
+│   │   ├── 002_partitioning.sql
+│   │   └── 003_indexing.sql
 │   ├── triggers/             # Step 2: Event-Driven Logic
-│   │   ├── trg_flights.sql   # Auto-classifies flight delays upon insert
-│   │   ├── trg_airlines.sql  # Updates airline full-text search vectors
-│   │   └── trg_airports.sql  # Search vectors & prevents deletion of active airports
-│   ├── functions/            # Step 3: Business Logic
-│   │   ├── analytics.sql     # PL/pgSQL functions for scoring and ranking airlines
-│   │   └── benchmarks.sql    # Profiling tools to measure index execution speeds
-│   ├── views/                # Final Phase Items
-│   │   └── materialized.sql  # Pre-aggregated reporting tables (Currently unused)
+│   │   ├── 101_airports_fts_and_guard.sql
+│   │   ├── 102_airlines_fts.sql
+│   │   └── 103_flights_delay_audit.sql
+│   ├── functions/            # Step 3: One-file-per-object SQL modules
+│   │   ├── 211_fn_airline_score.sql
+│   │   ├── 212_fn_airline_ranking.sql
+│   │   ├── ...
+│   │   └── 242_sp_capture_core_benchmarks.sql
+│   ├── views/                # Analytical Read Models (granular)
+│   │   ├── materialized.sql
+│   │   ├── 321_v_airline_monthly_trend.sql
+│   │   ├── 331_v_airline_daily_ops.sql
+│   │   └── 332_v_route_risk_score.sql
 │   └── queries/              # Demonstration Scripts
 │       ├── postgis.sql       # Spatial queries examples (Finding nearby airports)
-│       └── window_functions.sql # Complex analytical queries used for presentations
+│       ├── window_functions.sql # Complex analytical queries
+│       ├── quality_checks.sql # Data integrity and reliability checks
+│       └── final_showcase.sql # Final defense end-to-end SQL walkthrough
+├── sql/deploy.sql            # One-shot SQL deployment script
 ├── RUN.md                    # Exact ordered terminal commands to deploy the system
 └── README.md                 # Project Overview Document
 ```
@@ -74,3 +82,7 @@ To run this project locally, ensure you have the following installed directly on
 
 Please refer to the **`RUN.md`** file located in the root directory. 
 It contains the exact sequential terminal commands required to initialize the database, ingest the Python data, and run the advanced PostgreSQL feature demonstrations for grading purposes.
+
+For fast navigation and edit workflow, use **`sql/INDEX.md`** (numbered module map and execution order).
+
+For full-stack demo app setup (Go backend + React frontend), see **`APP_DEMO.md`**.

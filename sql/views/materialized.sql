@@ -2,7 +2,7 @@
 -- sql/views/materialized.sql
 -- Materialized Views cho dashboard và analytics
 --
--- Chạy SAU khi import data (ingest.py) và SAU 003_indexes.sql
+-- Chạy SAU khi import data (ingest.py) và SAU 003_indexing.sql
 -- Vì REFRESH MATERIALIZED VIEW cần có data để populate
 --
 -- Cách dùng:
@@ -274,12 +274,14 @@ DECLARE
 BEGIN
     RAISE NOTICE '%-30s | %s', 'Materialized View', 'Rows';
     RAISE NOTICE '%', REPEAT('-', 50);
-    FOR v_view IN VALUES
-        ('mv_airline_summary'),
-        ('mv_delay_heatmap'),
-        ('mv_top_routes'),
-        ('mv_monthly_trend'),
-        ('mv_route_performance')
+    FOR v_view IN
+        SELECT unnest(ARRAY[
+            'mv_airline_summary',
+            'mv_delay_heatmap',
+            'mv_top_routes',
+            'mv_monthly_trend',
+            'mv_route_performance'
+        ])
     LOOP
         EXECUTE format('SELECT COUNT(*) FROM %I', v_view) INTO v_count;
         RAISE NOTICE '%-30s | %s', v_view, v_count;

@@ -9,25 +9,25 @@ Dưới đây là chi tiết về các thành phần này:
 Dự án có tổng cộng **4 Triggers** được định nghĩa riêng biệt trong thư mục `sql/triggers/`. Chúng đóng vai trò tự động hóa việc cập nhật dữ liệu và ngăn chặn các hành động không hợp lệ.
 
 ### 1.1 Trigger: `trg_airline_fts`
-- **File:** `sql/triggers/trg_airlines.sql`
+- **File:** `sql/triggers/102_airlines_fts.sql`
 - **Áp dụng trên bảng:** `airlines`
 - **Hành động:** `BEFORE INSERT OR UPDATE`
 - **Chức năng:** Tự động tạo và cập nhật dữ liệu cho cột Full-Text Search (`search_vector` kiểu `tsvector`). Khi có một hãng hàng không mới được thêm vào hoặc tên hãng bị sửa đổi, trigger này sẽ chuẩn hóa văn bản thành các vector tìm kiếm, giúp cho việc truy vấn tên đối tượng nhanh chóng và chính xác.
 
 ### 1.2 Trigger: `trg_airport_fts`
-- **File:** `sql/triggers/trg_airports.sql`
+- **File:** `sql/triggers/101_airports_fts_and_guard.sql`
 - **Áp dụng trên bảng:** `airports`
 - **Hành động:** `BEFORE INSERT OR UPDATE`
 - **Chức năng:** Tương tự như trigger trên bảng `airlines`, trigger này đảm bảo cột `search_vector` của bảng `airports` luôn được cập nhật tự động mỗi khi thông tin sân bay thay đổi. Điều này rất hữu ích cho tính năng tìm kiếm tên sân bay hoặc thành phố.
 
 ### 1.3 Trigger: `trg_prevent_airport_delete`
-- **File:** `sql/triggers/trg_airports.sql`
+- **File:** `sql/triggers/101_airports_fts_and_guard.sql`
 - **Áp dụng trên bảng:** `airports`
 - **Hành động:** `BEFORE DELETE`
 - **Chức năng:** Đảm bảo toàn vẹn dữ liệu (Referential Integrity). Trước khi hệ thống hoặc người dùng cố gắng xóa một sân bay khỏi cơ sở dữ liệu, trigger này sẽ tự động kiểm tra xem có bất kỳ chuyến bay nào (trong bảng `flights`) đang sử dụng sân bay này làm điểm đi (Origin) hoặc điểm đến (Destination) hay không. Nếu có, nó sẽ ném ra một lỗi (Exception) và ngăn chặn việc xóa.
 
 ### 1.4 Trigger: `trg_log_delay`
-- **File:** `sql/triggers/trg_flights.sql`
+- **File:** `sql/triggers/103_flights_delay_audit.sql`
 - **Áp dụng trên bảng:** `flights`
 - **Hành động:** `AFTER INSERT`
 - **Chức năng:** Tự động giám sát và lưu vết (Audit Log). Mỗi khi có một chuyến bay được thêm vào hệ thống chứa thông tin về độ hoãn chuyến (delay > 0), trigger này sẽ phân loại mức độ trễ của sự kiện và tự động chèn một bản ghi tương ứng vào bảng lưu vết trễ chuyến (`delay_audit_log`).
@@ -43,7 +43,7 @@ Các Window Function bao gồm:
 ### 2.1 Xếp hạng dữ liệu (Ranking)
 - **`RANK() OVER (...)`**: Chuyên dùng để xếp hạng cho các chuyến bay, nhóm các hãng hoặc sân bay theo tiêu chí xếp hạng (ví dụ: mức độ delay). Khi các giá trị xếp hạng bằng nhau, chúng có chung một hạng và hạng tiếp sẽ bị nhảy số (VD: 1, 2, 2, 4).
 - **`DENSE_RANK() OVER (...)`**: Cung cấp cách tính tương tự như `RANK()` nhưng không có khe hở (nhảy số) nào giữa các hạng kết quả (VD: 1, 2, 2, 3).
-- **File sử dụng:** `sql/queries/window_functions.sql` và `sql/functions/analytics.sql`
+- **File sử dụng:** `sql/queries/window_functions.sql`, `sql/functions/211_fn_airline_score.sql`, `sql/functions/212_fn_airline_ranking.sql`
 
 ### 2.2 Đọc giá trị liền kề / So sánh dòng thời gian (Row Offset)
 - **`LAG(column, offset) OVER (...)`**: Tính năng này cung cấp cách thức truy xuất giá trị của một hàng ở vị trí trước đó (hoặc ngày/tháng ngay phía trước). Rất hữu hiệu để đánh giá hiệu suất, lấy chênh lệch delay của hôm nay trừ cho ngày hôm qua.
